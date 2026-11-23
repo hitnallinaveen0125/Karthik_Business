@@ -20,10 +20,12 @@ const { getRazorpayMode, isRazorpayConfigured } = require('./config/razorpay');
 const { getDatabaseMirrorStatus } = require('./config/database');
 
 const app = express();
-const clientOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5174')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const clientOrigins = [
+  ...(process.env.CLIENT_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+  'https://karthik-business-frontend.onrender.com',
+  'http://localhost:5173',
+  'http://127.0.0.1:5174',
+];
 
 app.disable('x-powered-by');
 app.use(
