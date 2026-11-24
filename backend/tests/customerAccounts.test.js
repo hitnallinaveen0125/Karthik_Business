@@ -53,6 +53,8 @@ test('customers can register and log in with normalized email and hashed passwor
     const login = await loginResponse.json();
     assert.equal(loginResponse.status, 200);
     assert.equal(login.user.id, 'customer-test-id');
+    assert.equal(login.user.role, 'customer');
+    assert.equal(jwt.verify(login.token, process.env.JWT_SECRET).role, 'customer');
 
     const invalidLoginResponse = await fetch(`${url}/login`, {
       method: 'POST',

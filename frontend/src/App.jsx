@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -460,13 +460,17 @@ function SuccessPage() {
 function CustomerAuth({ signup = false }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const submitting = useRef(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const redirect = new URLSearchParams(location.search).get('redirect');
-  const destination = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/account';
+  const isSafeCustomerRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') && !/^\/admin(?:\/|$)/i.test(redirect);
+  const destination = isSafeCustomerRedirect ? redirect : signup ? '/account' : '/';
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     const form = new FormData(event.currentTarget);
     setLoading(true);
     setErrorMessage('');
@@ -476,12 +480,24 @@ function CustomerAuth({ signup = false }) {
         email: form.get('email'),
         password: form.get('password'),
       });
+      if (data.user?.role === 'admin') {
+        localStorage.removeItem('anantaora_customer_token');
+        localStorage.removeItem('anantaora_customer');
+        localStorage.setItem('anantaora_token', data.token);
+        navigate('/admin', { replace: true });
+        return;
+      }
+      if (data.user?.role !== 'customer') {
+        throw new Error('The server returned an unrecognized account role.');
+      }
+      localStorage.removeItem('anantaora_token');
       localStorage.setItem('anantaora_customer_token', data.token);
       localStorage.setItem('anantaora_customer', JSON.stringify(data.user));
       navigate(destination, { replace: true });
     } catch (error) {
-      setErrorMessage(error.response?.data?.message || 'Your account request could not be completed. Please try again.');
+      setErrorMessage(error.response?.data?.message || error.message || 'Your account request could not be completed. Please try again.');
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -491,8 +507,8 @@ function CustomerAuth({ signup = false }) {
       <SiteHeader />
       <main className="auth-page">
         <form className="auth-card" onSubmit={submit}>
-          <h1>{signup ? 'Create your account' : 'Log in to your account'}</h1>
-          <p>Save your purchases and download your books again whenever you need them.</p>
+          <h1>{signup ? 'Create your account' : 'Log in to ANANTAORA'}</h1>
+          <p>{signup ? 'Save your purchases and download your books again whenever you need them.' : 'Sign in to access your ANANTAORA account.'}</p>
           {signup && (
             <label>
               Name
@@ -625,50 +641,6 @@ function CustomerAccount() {
   );
 }
 
-function AdminLogin() {
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const handleLogin = async (event) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const payload = {
-      email: form.get('email'),
-      password: form.get('password'),
-    };
-
-    setLoading(true);
-    setErrorMessage('');
-    try {
-      const response = await api.post('/admin/login', payload);
-      localStorage.setItem('anantaora_token', response.data.token);
-      window.location.href = '/admin';
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || 'Founder login failed. Check the API connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="page-shell auth-page">
-      <form className="auth-card" onSubmit={handleLogin}>
-        <h1>Founder login</h1>
-        <label>
-          Founder email
-          <input type="email" name="email" autoComplete="username" required />
-        </label>
-        <label>
-          Password
-          <input type="password" name="password" autoComplete="current-password" required />
-        </label>
-        {errorMessage && <p className="form-message" role="alert">{errorMessage}</p>}
-        <button type="submit" className="primary-btn" disabled={loading}>{loading ? 'Signing in…' : 'Login'}</button>
-      </form>
-    </div>
-  );
-}
-
 function AdminDashboard() {
   const [products, setProducts] = useState([]);
   const [dashboard, setDashboard] = useState(null);
@@ -681,7 +653,7 @@ function AdminDashboard() {
 
   useEffect(() => {
     if (!localStorage.getItem('anantaora_token')) {
-      navigate('/admin/login', { replace: true });
+      navigate('/login', { replace: true });
       return;
     }
 
@@ -700,7 +672,7 @@ function AdminDashboard() {
         if (!active) return;
         if (error.response?.status === 401 || error.response?.status === 403) {
           localStorage.removeItem('anantaora_token');
-          navigate('/admin/login', { replace: true });
+          navigate('/login', { replace: true });
           return;
         }
         setErrorMessage(error.response?.data?.message || 'Admin data could not be loaded. Check the backend and database connection.');
@@ -734,7 +706,7 @@ function AdminDashboard() {
 
   const signOut = () => {
     localStorage.removeItem('anantaora_token');
-    navigate('/admin/login', { replace: true });
+    navigate('/login', { replace: true });
   };
   const selectedSales = dashboard?.sales.period;
   const allTimeSales = dashboard?.sales.allTime;
@@ -907,7 +879,7 @@ function App() {
         <Route path="/login" element={<CustomerAuth />} />
         <Route path="/signup" element={<CustomerAuth signup />} />
         <Route path="/account" element={<CustomerAccount />} />
-        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/login" element={<Navigate to="/login" replace />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </BrowserRouter>

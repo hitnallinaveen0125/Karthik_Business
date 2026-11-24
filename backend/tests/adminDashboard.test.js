@@ -27,7 +27,7 @@ test('revenue chart buckets are complete through the current India day or month'
   assert.equal(getRevenueBuckets('yearly', yearlyStart, now)[10].key, '2026-11');
 });
 
-test('sales dashboard requires founder authentication and validates period filters', async () => {
+test('sales dashboard requires an admin role and validates period filters', async () => {
   const previousSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = 'dashboard-route-test-secret';
   const { app } = require('../app');
@@ -52,6 +52,26 @@ test('sales dashboard requires founder authentication and validates period filte
       headers: { authorization: `Bearer ${founderToken}` },
     });
     assert.equal(invalidPeriod.status, 400);
+
+    const adminToken = jwt.sign(
+      { sub: 'founder', role: 'admin' },
+      process.env.JWT_SECRET,
+      { expiresIn: '1m' }
+    );
+    const adminInvalidPeriod = await fetch(`${baseUrl}?period=daily`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(adminInvalidPeriod.status, 400);
+
+    const customerToken = jwt.sign(
+      { sub: 'customer-test-id', role: 'customer' },
+      process.env.JWT_SECRET,
+      { expiresIn: '1m' }
+    );
+    const customerDenied = await fetch(baseUrl, {
+      headers: { authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(customerDenied.status, 403);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

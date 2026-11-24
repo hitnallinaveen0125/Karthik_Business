@@ -7,10 +7,14 @@ const { createDownloadTokenForOrder } = require('../utils/downloadTokens');
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const publicUser = (user) => ({ id: user._id.toString(), name: user.name, email: user.email });
+const publicUser = (user) => ({ id: user._id.toString(), name: user.name, email: user.email, role: 'customer' });
 
 function createCustomerToken(user) {
   return jwt.sign({ sub: user._id.toString(), role: 'customer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+}
+
+function createAdminToken(email) {
+  return jwt.sign({ sub: 'founder', role: 'admin', email }, process.env.JWT_SECRET, { expiresIn: '8h' });
 }
 
 router.post('/signup', async (req, res) => {
@@ -55,6 +59,21 @@ router.post('/login', async (req, res) => {
   }
   if (!process.env.JWT_SECRET) {
     return res.status(503).json({ success: false, message: 'Customer authentication is not configured on the server.' });
+  }
+
+  const founderEmail = process.env.FOUNDER_EMAIL;
+  const founderPassword = process.env.FOUNDER_PASSWORD;
+  if (
+    founderEmail &&
+    founderPassword &&
+    normalizedEmail === founderEmail.trim().toLowerCase() &&
+    password === founderPassword
+  ) {
+    return res.json({
+      success: true,
+      token: createAdminToken(founderEmail),
+      user: { id: 'founder', name: 'Founder', email: founderEmail, role: 'admin' },
+    });
   }
 
   const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');

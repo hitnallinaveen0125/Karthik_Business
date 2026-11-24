@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const jwt = require('jsonwebtoken');
 const { app } = require('../app');
+const { User } = require('../models');
 
 test('founder login accepts case-insensitive email and preserves exact password matching', async () => {
   const originalEnv = {
@@ -27,6 +29,30 @@ test('founder login accepts case-insensitive email and preserves exact password 
     });
     assert.equal(successfulLogin.status, 200);
     assert.equal((await successfulLogin.json()).success, true);
+
+    const unifiedLogin = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: '  FOUNDER@EXAMPLE.TEST  ', password: 'local-test-password' }),
+    });
+    const adminSession = await unifiedLogin.json();
+    assert.equal(unifiedLogin.status, 200);
+    assert.equal(adminSession.user.role, 'admin');
+    assert.equal(jwt.verify(adminSession.token, process.env.JWT_SECRET).role, 'admin');
+
+    const originalFindOne = User.findOne;
+    User.findOne = () => ({ select: async () => null });
+    let invalidUnifiedLogin;
+    try {
+      invalidUnifiedLogin = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'founder@example.test', password: 'incorrect-password' }),
+      });
+    } finally {
+      User.findOne = originalFindOne;
+    }
+    assert.equal(invalidUnifiedLogin.status, 401);
 
     const failedLogin = await fetch(baseUrl, {
       method: 'POST',

@@ -45,7 +45,7 @@ The database mirror is one-way (Atlas to local). Mirror outages are surfaced, bu
 
 ## Founder sales and database dashboard
 
-Sign in at `/admin/login` with the founder credentials from `.env`, then open `/admin`. The dashboard reads verified sales, distinct purchasing customers, recent orders, and MongoDB collection statistics through founder-authenticated API routes. Select **This week**, **This month**, or **This year** to filter revenue and purchasing-customer metrics. Database reporting shows collection names, estimated document counts, and aggregate storage sizes only; it does not expose database credentials or raw collection contents.
+Sign in at `/login` with the founder credentials from `.env`; the shared login routes the admin directly to `/admin`. The dashboard reads verified sales, distinct purchasing customers, recent orders, and MongoDB collection statistics through admin-authenticated API routes. Select **This week**, **This month**, or **This year** to filter revenue and purchasing-customer metrics. Database reporting shows collection names, estimated document counts, and aggregate storage sizes only; it does not expose database credentials or raw collection contents.
 
 Install dependencies if needed and start the API:
 
@@ -62,7 +62,7 @@ The health endpoint reports the selected payment mode and whether valid credenti
 ## Upload the private product PDF
 
 1. Start the backend with MongoDB configured.
-2. Start the frontend and sign in at `/admin/login` with the founder credentials from `.env`.
+2. Start the frontend and sign in at `/login` with the founder credentials from `.env`.
 3. Use the Product PDF storage form to upload the correct product PDF. The supplied `30_day_creator_playbook.pdf` is the current book file.
 4. The authenticated endpoint is `PUT /api/admin/products/:productId/pdf`, multipart field `pdf`; a founder JWT is required. Uploads are limited to 50 MB and checked for a PDF signature. The product stores the resulting GridFS ObjectId; the file itself is never served publicly.
 
@@ -79,7 +79,7 @@ The storefront uses Razorpay's hosted Checkout with a backend-created order; thi
 ## Purchase and delivery APIs
 
 - `GET /api/products` and `GET /api/products/:slug`: published product metadata only.
-- `POST /api/auth/signup` and `POST /api/auth/login`: create a customer account or start a customer session.
+- `POST /api/auth/signup` and `POST /api/auth/login`: create a customer account or start a shared customer/admin session. Admin identity is verified against the server-side founder credentials.
 - `GET /api/auth/purchases` and `POST /api/auth/purchases/:orderId/download`: list the signed-in customer’s paid purchases and issue a fresh download link for an owned purchase.
 - `POST /api/payments/create-order`: requires customer sign-in and creates a pending MongoDB order linked to that account, plus a Razorpay order using the stored product price.
 - `POST /api/payments/verify`: requires the same customer account, verifies the Razorpay signature, fetches the payment from Razorpay, checks capture/order/amount/currency, then marks the matching MongoDB order paid.

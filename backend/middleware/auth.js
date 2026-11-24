@@ -15,8 +15,8 @@ function requireFounder(req, res, next) {
   try {
     const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded;
-    if (decoded.role !== 'founder') {
-      return res.status(403).json({ success: false, message: 'Founder access required.' });
+    if (decoded.role !== 'admin' && decoded.role !== 'founder') {
+      return res.status(403).json({ success: false, message: 'Admin access required.' });
     }
     next();
   } catch (error) {
