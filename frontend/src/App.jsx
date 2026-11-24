@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -16,6 +16,54 @@ import {
 } from 'lucide-react';
 import './App.css';
 import api from './services/api';
+
+let razorpayScriptPromise;
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) {
+    return Promise.resolve();
+  }
+  if (razorpayScriptPromise) {
+    return razorpayScriptPromise;
+  }
+
+  razorpayScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    let timeoutId;
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      script.onload = null;
+      script.onerror = null;
+    };
+
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => {
+      cleanup();
+      if (window.Razorpay) {
+        resolve();
+      } else {
+        script.remove();
+        reject(new Error('Razorpay Checkout did not initialize.'));
+      }
+    };
+    script.onerror = () => {
+      cleanup();
+      script.remove();
+      reject(new Error('Razorpay Checkout could not be loaded.'));
+    };
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      script.remove();
+      reject(new Error('Razorpay Checkout took too long to load. Please try again.'));
+    }, 15000);
+    document.body.appendChild(script);
+  }).catch((error) => {
+    razorpayScriptPromise = null;
+    throw error;
+  });
+
+  return razorpayScriptPromise;
+}
 
 function getStoredCustomer() {
   try {
@@ -150,6 +198,7 @@ function Contact() {
 function ProductPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const checkoutInProgress = useRef(false);
   const [customer] = useState(getStoredCustomer);
   const [productResult, setProductResult] = useState({
     slug: null,
@@ -224,35 +273,32 @@ function ProductPage() {
       setPendingVerification({ internalOrderId, paymentResponse });
       setErrorMessage(error.response?.data?.message || 'Payment may have completed, but verification could not finish. Retry verification before paying again.');
     } finally {
+      checkoutInProgress.current = false;
       setCheckoutLoading(false);
     }
   };
 
   const buyNow = async (event) => {
     event.preventDefault();
+    if (checkoutInProgress.current) return;
     if (!product) return;
     if (!localStorage.getItem('anantaora_customer_token')) {
       navigate(`/login?redirect=${encodeURIComponent(`/products/${slug}`)}`);
       return;
     }
+    checkoutInProgress.current = true;
     setCheckoutLoading(true);
     setErrorMessage('');
 
     try {
       const response = await api.post('/payments/create-order', {
         productId: product.id,
+      }, {
+        timeout: 20000,
       });
 
       const { key, amount, currency, order } = response.data;
-      if (!window.Razorpay) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          script.onload = resolve;
-          script.onerror = () => reject(new Error('Razorpay Checkout could not be loaded.'));
-          document.body.appendChild(script);
-        });
-      }
+      await loadRazorpayCheckout();
 
       const razorpayCheckout = new window.Razorpay({
         key,
@@ -265,17 +311,30 @@ function ProductPage() {
         prefill: { name: customer?.name, email: customer?.email },
         theme: { color: '#3b82f6' },
         modal: {
-          ondismiss: () => setCheckoutLoading(false),
+          ondismiss: () => {
+            checkoutInProgress.current = false;
+            setCheckoutLoading(false);
+          },
         },
       });
       razorpayCheckout.on('payment.failed', (paymentFailure) => {
+        checkoutInProgress.current = false;
         setCheckoutLoading(false);
         setErrorMessage(paymentFailure.error?.description || 'Payment failed. You have not been charged for an unverified order.');
       });
       razorpayCheckout.open();
     } catch (error) {
-      console.error('Checkout failed:', error);
-      setErrorMessage(error.response?.data?.message || error.message || 'Checkout could not be started.');
+      console.error('Checkout failed:', {
+        status: error.response?.status || null,
+        code: error.code || null,
+      });
+      setErrorMessage(
+        error.response?.data?.message ||
+        (error.code === 'ECONNABORTED'
+          ? 'The payment service took too long to respond. Please try again.'
+          : error.message || 'Checkout could not be started.')
+      );
+      checkoutInProgress.current = false;
       setCheckoutLoading(false);
     }
   };

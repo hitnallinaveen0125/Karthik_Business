@@ -188,6 +188,65 @@ test('creates a backend order at the stored amount and returns only the public k
   assert.equal(JSON.stringify(response.body).includes(process.env.RAZORPAY_KEY_SECRET), false);
 });
 
+test('maps Razorpay authentication failures to a safe provider error response', async () => {
+  models.Product.findOne = async () => ({
+    productId: 'product-1',
+    title: 'Test Product',
+    pricePaise: 9900,
+    gridFsFileId: 'file-1',
+  });
+  models.Order.create = async () => {
+    assert.fail('A local order must not be stored when Razorpay order creation fails.');
+  };
+  razorpayClient.orders.create = async () => {
+    const error = new Error('Authentication failed');
+    error.statusCode = 401;
+    error.error = {
+      code: 'BAD_REQUEST_ERROR',
+      description: 'Authentication failed',
+    };
+    throw error;
+  };
+  const loggedErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => { loggedErrors.push(args); };
+  const response = createResponse();
+
+  try {
+    await createRazorpayOrder(
+      {
+        body: { productId: 'product-1' },
+        customer: {
+          _id: 'customer-1',
+          name: 'Test Customer',
+          email: 'customer@example.com',
+        },
+      },
+      response
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.equal(response.statusCode, 502);
+  assert.equal(response.body.message, 'The payment provider could not create an order. Please try again later.');
+  assert.equal(JSON.stringify(response.body).includes('Authentication failed'), false);
+  assert.equal(JSON.stringify(response.body).includes(process.env.RAZORPAY_KEY_SECRET), false);
+  assert.equal(loggedErrors.length, 1);
+  assert.deepEqual(loggedErrors[0][1], {
+    mode: 'live',
+    keyIdPresent: true,
+    keySecretPresent: true,
+    keyPrefixMatches: true,
+    hasSurroundingWhitespace: false,
+    sdkInitialized: true,
+    providerStatusCode: 401,
+    providerErrorCode: 'BAD_REQUEST_ERROR',
+  });
+  assert.equal(JSON.stringify(loggedErrors).includes(process.env.RAZORPAY_KEY_SECRET), false);
+  assert.equal(JSON.stringify(loggedErrors).includes(process.env.RAZORPAY_KEY_ID), false);
+});
+
 test('verifies a captured payment and records one paid purchase', async () => {
   const order = createOrder();
   const writes = { order: 0, payment: 0, sale: 0 };
@@ -197,7 +256,10 @@ test('verifies a captured payment and records one paid purchase', async () => {
     creatorId: 'creator-1',
     gridFsFileId: 'file-1',
   });
-  models.Order.updateOne = async () => { writes.order += 1; };
+  models.Order.updateOne = async () => {
+    writes.order += 1;
+    return { matchedCount: 1 };
+  };
   models.Payment.updateOne = async () => { writes.payment += 1; };
   models.Sale.updateOne = async () => { writes.sale += 1; };
   const response = createResponse();
@@ -333,6 +395,41 @@ test('rejects a different payment ID when an order already has a payment linked'
 
   assert.equal(response.statusCode, 409);
   assert.equal(orderWriteCount, 0);
+  assert.equal(downloadTokenCreationCount, 0);
+});
+
+test('allows only one concurrent captured payment to claim a pending order', async () => {
+  const order = createOrder();
+  let paymentWriteCount = 0;
+  let saleWriteCount = 0;
+  models.Order.findOne = async () => order;
+  models.Product.findOne = async () => ({
+    productId: 'product-1',
+    creatorId: 'creator-1',
+    gridFsFileId: 'file-1',
+  });
+  models.Order.updateOne = async () => ({ matchedCount: 0 });
+  models.Payment.updateOne = async () => { paymentWriteCount += 1; };
+  models.Sale.updateOne = async () => { saleWriteCount += 1; };
+  const response = createResponse();
+
+  await verifyRazorpayPayment(
+    {
+      body: {
+        internalOrderId: order.internalOrderReference,
+        razorpay_order_id: order.razorpayOrderId,
+        razorpay_payment_id: 'payment_race',
+        razorpay_signature: signPayment(order.razorpayOrderId, 'payment_race'),
+      },
+      customer: { _id: 'customer-1' },
+    },
+    response
+  );
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(order.orderStatus, 'pending');
+  assert.equal(paymentWriteCount, 0);
+  assert.equal(saleWriteCount, 0);
   assert.equal(downloadTokenCreationCount, 0);
 });
 

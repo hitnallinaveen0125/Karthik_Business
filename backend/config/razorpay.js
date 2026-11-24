@@ -9,10 +9,45 @@ function getRazorpayMode() {
   return mode;
 }
 
-function isRazorpayConfigured() {
+function getRazorpayConfig() {
   const mode = getRazorpayMode();
-  const { RAZORPAY_KEY_ID: keyId, RAZORPAY_KEY_SECRET: keySecret } = process.env;
+  const rawKeyId = process.env.RAZORPAY_KEY_ID || '';
+  const rawKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
+  const keyId = rawKeyId.trim();
+  const keySecret = rawKeySecret.trim();
   const expectedPrefix = mode === 'test' ? 'rzp_test_' : 'rzp_live_';
+
+  return {
+    mode,
+    keyId,
+    keySecret,
+    expectedPrefix,
+    hasSurroundingWhitespace: rawKeyId !== keyId || rawKeySecret !== keySecret,
+  };
+}
+
+function getRazorpayConfigDiagnostics() {
+  const { mode, keyId, keySecret, expectedPrefix, hasSurroundingWhitespace } = getRazorpayConfig();
+
+  return {
+    mode,
+    keyIdPresent: Boolean(keyId),
+    keySecretPresent: Boolean(keySecret),
+    keyPrefixMatches: keyId.startsWith(expectedPrefix),
+    hasSurroundingWhitespace,
+  };
+}
+
+function getRazorpayKeyId() {
+  return getRazorpayConfig().keyId;
+}
+
+function getRazorpayKeySecret() {
+  return getRazorpayConfig().keySecret;
+}
+
+function isRazorpayConfigured() {
+  const { keyId, keySecret, expectedPrefix } = getRazorpayConfig();
 
   return Boolean(
     keyId &&
@@ -24,9 +59,7 @@ function isRazorpayConfigured() {
 }
 
 function createRazorpayClient() {
-  const mode = getRazorpayMode();
-  const { RAZORPAY_KEY_ID: keyId, RAZORPAY_KEY_SECRET: keySecret } = process.env;
-  const expectedPrefix = mode === 'test' ? 'rzp_test_' : 'rzp_live_';
+  const { mode, keyId, keySecret, expectedPrefix } = getRazorpayConfig();
 
   if (
     !keyId ||
@@ -45,4 +78,11 @@ function createRazorpayClient() {
   });
 }
 
-module.exports = { createRazorpayClient, getRazorpayMode, isRazorpayConfigured };
+module.exports = {
+  createRazorpayClient,
+  getRazorpayConfigDiagnostics,
+  getRazorpayKeyId,
+  getRazorpayKeySecret,
+  getRazorpayMode,
+  isRazorpayConfigured,
+};

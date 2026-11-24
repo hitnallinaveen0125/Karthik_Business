@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createRazorpayClient, getRazorpayMode, isRazorpayConfigured } = require('../config/razorpay');
+const {
+  createRazorpayClient,
+  getRazorpayConfigDiagnostics,
+  getRazorpayKeyId,
+  getRazorpayKeySecret,
+  getRazorpayMode,
+  isRazorpayConfigured,
+} = require('../config/razorpay');
 const { Product } = require('../models');
 const { getProductBySlugRoute } = require('../controllers/paymentController');
 
@@ -65,6 +72,46 @@ test('rejects template credentials instead of attempting checkout with placehold
   process.env.RAZORPAY_KEY_ID = 'rzp_test_your_key_id';
   process.env.RAZORPAY_KEY_SECRET = 'your_razorpay_test_key_secret';
 
+  assert.throws(() => createRazorpayClient(), /Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET/);
+});
+
+test('trims credentials consistently and reports only safe configuration diagnostics', () => {
+  process.env.RAZORPAY_MODE = ' live ';
+  process.env.RAZORPAY_KEY_ID = ' rzp_live_local-check ';
+  process.env.RAZORPAY_KEY_SECRET = ' live-secret-local-check ';
+
+  assert.equal(getRazorpayMode(), 'live');
+  assert.ok(createRazorpayClient());
+  assert.equal(getRazorpayKeyId(), 'rzp_live_local-check');
+  assert.equal(getRazorpayKeySecret(), 'live-secret-local-check');
+  assert.deepEqual(getRazorpayConfigDiagnostics(), {
+    mode: 'live',
+    keyIdPresent: true,
+    keySecretPresent: true,
+    keyPrefixMatches: true,
+    hasSurroundingWhitespace: true,
+  });
+  assert.equal(
+    JSON.stringify(getRazorpayConfigDiagnostics()).includes(process.env.RAZORPAY_KEY_SECRET),
+    false
+  );
+});
+
+test('reports missing Key ID and Key Secret without returning credential values', () => {
+  process.env.RAZORPAY_MODE = 'live';
+  process.env.RAZORPAY_KEY_ID = '';
+  process.env.RAZORPAY_KEY_SECRET = '';
+
+  assert.deepEqual(getRazorpayConfigDiagnostics(), {
+    mode: 'live',
+    keyIdPresent: false,
+    keySecretPresent: false,
+    keyPrefixMatches: false,
+    hasSurroundingWhitespace: false,
+  });
+
+  process.env.RAZORPAY_KEY_ID = 'rzp_live_local-check';
+  assert.equal(isRazorpayConfigured(), false);
   assert.throws(() => createRazorpayClient(), /Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET/);
 });
 

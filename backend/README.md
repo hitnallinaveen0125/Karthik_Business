@@ -72,6 +72,10 @@ Checkout stays disabled for products without a matching GridFS file. The default
 
 Configure the Razorpay webhook URL as `https://<your-api-host>/api/payments/webhook`, use the same secret as `RAZORPAY_WEBHOOK_SECRET`, and subscribe to payment capture/failure and refund-processed events. The endpoint validates the signature against the raw request body and fetches captured payments from Razorpay before updating an order. Webhook event IDs are persisted to avoid duplicate sales.
 
+## Razorpay Checkout and UPI/QR
+
+The storefront uses Razorpay's hosted Checkout with a backend-created order; this backend does not generate standalone or reusable QR codes. Payment methods shown in Checkout, including UPI and any QR option, depend on the merchant account's Live-mode activation and Razorpay's Checkout configuration. If a newly opened Checkout QR is rejected by a UPI app, confirm that Live UPI/QR payments are enabled for the merchant account with Razorpay, then retry with a fresh Checkout session and a supported UPI app. Do not reuse an old QR or add undocumented QR parameters to Checkout.
+
 ## Purchase and delivery APIs
 
 - `GET /api/products` and `GET /api/products/:slug`: published product metadata only.

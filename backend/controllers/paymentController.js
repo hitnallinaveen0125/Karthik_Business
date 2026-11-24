@@ -1,5 +1,12 @@
 const crypto = require('crypto');
-const { createRazorpayClient, getRazorpayMode, isRazorpayConfigured } = require('../config/razorpay');
+const {
+  createRazorpayClient,
+  getRazorpayConfigDiagnostics,
+  getRazorpayKeyId,
+  getRazorpayKeySecret,
+  getRazorpayMode,
+  isRazorpayConfigured,
+} = require('../config/razorpay');
 const { findGridFSFile } = require('../config/database');
 const { Product, Order, Payment, Sale, WebhookEvent } = require('../models');
 const { createDownloadTokenForOrder } = require('../utils/downloadTokens');
@@ -15,7 +22,7 @@ function createHttpError(statusCode, message) {
 }
 
 function getSignatureStatus(orderId, paymentId, signature) {
-  const secret = process.env.RAZORPAY_KEY_SECRET;
+  const secret = getRazorpayKeySecret();
   if (!secret) {
     throw new Error('Razorpay is not configured on the server.');
   }
@@ -94,8 +101,12 @@ async function recordCapturedPayment(order, payment) {
   }
 
   const paidAt = order.paidAt || new Date();
-  await Order.updateOne(
-    { _id: order._id, orderStatus: { $ne: 'refunded' } },
+  const paymentLink = await Order.updateOne(
+    {
+      _id: order._id,
+      orderStatus: { $ne: 'refunded' },
+      $or: [{ razorpayPaymentId: null }, { razorpayPaymentId: payment.id }],
+    },
     {
       $set: {
         orderStatus: 'paid',
@@ -104,6 +115,9 @@ async function recordCapturedPayment(order, payment) {
       },
     }
   );
+  if (paymentLink.matchedCount !== 1) {
+    throw createHttpError(409, 'A different payment is already linked to this order.');
+  }
   order.orderStatus = 'paid';
   order.paidAt = paidAt;
   order.razorpayPaymentId = payment.id;
@@ -185,15 +199,30 @@ async function createRazorpayOrder(req, res) {
   const amountPaise = product.pricePaise;
 
   console.log('[Payment] creating order:', internalOrderReference, 'product:', product.productId, 'amount paise:', amountPaise);
-  const razorpayOrder = await razorpay.orders.create({
-    amount: amountPaise,
-    currency: 'INR',
-    receipt: internalOrderReference,
-    notes: {
-      productId: product.productId,
-      customerEmail: customerEmail.trim().toLowerCase(),
-    },
-  });
+  let razorpayOrder;
+  try {
+    razorpayOrder = await razorpay.orders.create({
+      amount: amountPaise,
+      currency: 'INR',
+      receipt: internalOrderReference,
+      notes: {
+        productId: product.productId,
+        customerEmail: customerEmail.trim().toLowerCase(),
+      },
+    });
+  } catch (error) {
+    const diagnostics = getRazorpayConfigDiagnostics();
+    console.error('[Payment] Razorpay order creation failed:', {
+      ...diagnostics,
+      sdkInitialized: true,
+      providerStatusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null,
+      providerErrorCode: typeof error?.error?.code === 'string' ? error.error.code : null,
+    });
+    return res.status(502).json({
+      success: false,
+      message: 'The payment provider could not create an order. Please try again later.',
+    });
+  }
 
   await Order.create({
     internalOrderReference,
@@ -213,7 +242,7 @@ async function createRazorpayOrder(req, res) {
     success: true,
     message: 'Razorpay order created successfully.',
     internalOrderId: internalOrderReference,
-    key: process.env.RAZORPAY_KEY_ID,
+    key: getRazorpayKeyId(),
     amount: razorpayOrder.amount,
     currency: razorpayOrder.currency,
     order: { id: razorpayOrder.id, amount: razorpayOrder.amount, currency: razorpayOrder.currency },
