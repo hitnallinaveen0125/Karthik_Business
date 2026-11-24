@@ -1,7 +1,8 @@
 const Razorpay = require('razorpay');
 
 function getRazorpayMode() {
-  const mode = (process.env.RAZORPAY_MODE || 'test').trim().toLowerCase();
+  const defaultMode = process.env.NODE_ENV === 'production' ? 'live' : 'test';
+  const mode = (process.env.RAZORPAY_MODE || defaultMode).trim().toLowerCase();
   if (mode !== 'test' && mode !== 'live') {
     throw new Error('RAZORPAY_MODE must be either "test" or "live".');
   }

@@ -5,12 +5,15 @@ const { Product } = require('../models');
 const { getProductBySlugRoute } = require('../controllers/paymentController');
 
 const originalEnv = {
+  nodeEnv: process.env.NODE_ENV,
   mode: process.env.RAZORPAY_MODE,
   keyId: process.env.RAZORPAY_KEY_ID,
   keySecret: process.env.RAZORPAY_KEY_SECRET,
 };
 
 test.afterEach(() => {
+  if (originalEnv.nodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalEnv.nodeEnv;
   if (originalEnv.mode === undefined) delete process.env.RAZORPAY_MODE;
   else process.env.RAZORPAY_MODE = originalEnv.mode;
   if (originalEnv.keyId === undefined) delete process.env.RAZORPAY_KEY_ID;
@@ -19,13 +22,25 @@ test.afterEach(() => {
   else process.env.RAZORPAY_KEY_SECRET = originalEnv.keySecret;
 });
 
-test('defaults to test mode and accepts only test keys', () => {
+test('defaults to test mode outside production and accepts only test keys', () => {
+  process.env.NODE_ENV = 'test';
   delete process.env.RAZORPAY_MODE;
   process.env.RAZORPAY_KEY_ID = 'rzp_test_local-check';
   process.env.RAZORPAY_KEY_SECRET = 'test-secret-local-check';
 
   assert.equal(getRazorpayMode(), 'test');
   assert.ok(createRazorpayClient());
+});
+
+test('defaults to live mode in production and rejects missing live credentials', () => {
+  process.env.NODE_ENV = 'production';
+  delete process.env.RAZORPAY_MODE;
+  process.env.RAZORPAY_KEY_ID = 'rzp_test_local-check';
+  process.env.RAZORPAY_KEY_SECRET = 'test-secret-local-check';
+
+  assert.equal(getRazorpayMode(), 'live');
+  assert.equal(isRazorpayConfigured(), false);
+  assert.throws(() => createRazorpayClient(), /must start with "rzp_live_"/);
 });
 
 test('does not allow live Razorpay keys while test mode is selected', () => {

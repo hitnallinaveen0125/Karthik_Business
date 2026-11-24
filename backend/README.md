@@ -4,7 +4,7 @@
 
 For the fastest local setup, copy `.env.example` to `.env`. To use Atlas as the primary database and mirror its data to local MongoDB, set `MONGODB_URI` to your Atlas URI (including the `anantaora` database name) and leave `LOCAL_MONGODB_URI` pointed to `mongodb://127.0.0.1:27017/anantaora`. Set your own random `JWT_SECRET` and founder credentials. Do not commit `.env`.
 
-The checked-in Razorpay variables are intentionally blank. Create a fresh Test Mode key in the Razorpay Dashboard and enter it only in `backend/.env`; never place the key secret in the frontend. If a key has been shared in chat, rotate it before use.
+The checked-in Razorpay variables are intentionally blank. For local development, create a Test Mode key in the Razorpay Dashboard and enter it only in `backend/.env`; never place the key secret in the frontend. If a key has been shared, rotate it before use.
 
 PowerShell quick start (local MongoDB service required):
 
@@ -29,7 +29,7 @@ The backend is available at `http://127.0.0.1:5000` and the frontend at `http://
 - `MONGODB_URI`: primary MongoDB connection string (Atlas for the dual-database setup). The URI may omit the database path when `MONGODB_DATABASE=anantaora` is set. The application stores products, orders, payments, download grants, webhook IDs, and sales here. PDFs are kept in the private `pdfs.files` / `pdfs.chunks` GridFS collections.
 - `MONGODB_DATABASE`: database name to use for the primary and local mirror; defaults to the name in `MONGODB_URI`.
 - `LOCAL_MONGODB_URI`: optional local mirror connection string; defaults to unset. Atlas change streams require Atlas as the primary. Percent-encode special characters in the database password and keep the URI only in `backend/.env`.
-- `RAZORPAY_MODE=test`, `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`: use Razorpay **Test Mode** keys from the Razorpay Dashboard. The backend requires a `rzp_test_` key ID while in test mode and will reject a live key.
+- `RAZORPAY_MODE`, `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`: local development defaults to `test` and requires a `rzp_test_` Key ID. In production, the backend defaults to `live` and requires a `rzp_live_` Key ID. Set `RAZORPAY_MODE=live` and configure the Live Key ID and Key Secret as Render **backend** environment variables; never place the Key Secret in frontend configuration.
 - `RAZORPAY_WEBHOOK_SECRET`: the secret configured for the Razorpay webhook endpoint.
 - `JWT_SECRET`, `FOUNDER_EMAIL`, and `FOUNDER_PASSWORD`: a private founder login and a long random JWT signing secret.
 
@@ -57,7 +57,7 @@ npm run dev
 
 In another terminal, start the frontend with `cd frontend; npm run dev`. Set `VITE_API_BASE_URL` only when the API is not at `http://localhost:5000/api`.
 
-The health endpoint reports the selected payment mode and whether valid credentials are configured (never credentials): `GET http://127.0.0.1:5000/api/health`. Test mode is the default. To switch to real payments later, change `RAZORPAY_MODE=live` and replace both Razorpay credentials with live keys on the server only. Never put the key secret in a frontend environment file.
+The health endpoint reports the selected payment mode and whether valid credentials are configured (never credentials): `GET http://127.0.0.1:5000/api/health`. Local development defaults to Test mode; production defaults to Live mode. Configure the Live variables only on the Render backend service. If webhooks are enabled, configure a Live webhook and set its matching secret in `RAZORPAY_WEBHOOK_SECRET`.
 
 ## Upload the private product PDF
 
